@@ -147,16 +147,19 @@ namespace HServer
                     case 2: //переходим в другую директорию cd
                         ChangeDirectory(client, ms);
                         break;
-                    case 3: //переходим в другую директорию cd
+                    case 3: //предача информации от вновь подключенного клиента
                         Introduce(client, ms);
                         break;
-                    case 4: //переходим в другую директорию cd
+                    case 4: //закачка фаил на машину клиента
                         UploadFileAnswer(client);
                         break;
-                    case 100: //переходим в другую директорию cd
+                    case 5: //скачивание файла с машины клиента
+                        LoadFile(client);
+                        break;
+                    case 100: //проверка вкрсии клиента
                         CheckAnswer(client, ms);
                         break;
-                    case 13: //переходим в другую директорию cd
+                    case 13: //обработка ошибки
                         ErroreCode(ms);
                         break;
                     default:
@@ -166,6 +169,42 @@ namespace HServer
             }
         }
 
+        private static void LoadFile(Client client)//загрузка файла
+        {
+            ms.Position = 0;
+            client.Socket.Receive(ms.GetBuffer());
+            int length = reader.ReadInt32(); 
+            if(length == -1)
+            {
+                Console.WriteLine("Не верное имя файла.");
+                return;
+            }       
+            string name = reader.ReadString();
+            ms.Position = 0;
+            writer.Write("ok");
+            client.Socket.Send(ms.GetBuffer());
+            Console.WriteLine("Загрузка начата.");//код операции
+
+            using (MemoryStream msFile = new MemoryStream(new byte[length], 0, length, true, true))
+            {
+                BinaryReader readerFile = new BinaryReader(msFile);
+                byte[] data = new byte[length];
+                string path = Environment.CurrentDirectory +"\\download\\" + client.userName + "_" + name;
+                using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
+                {
+                    msFile.Position = 0;
+                    client.Socket.Receive(msFile.GetBuffer());
+                    data = readerFile.ReadBytes(length);
+                    fs.Write(data, 0, data.Length);
+                    // считывает байт в память и переводит каретку на байт вперед
+
+                }
+            }
+            ms.Position = 0;
+            client.Socket.Receive(ms.GetBuffer());            
+            Console.WriteLine(reader.ReadString());
+        }
+
         private static void CheckAnswer(Client client, MemoryStream ms)//проверка версии
         {            
             BinaryReader reader = new BinaryReader(ms);//чтение из поток
@@ -173,33 +212,44 @@ namespace HServer
         }
 
         private static void UploadFileAnswer(Client client)//функция обработки ответа на загрузку
-        {            
+        {
+            Console.Clear();
             Console.Write("Введите путь к файлу:> ");
             string pathF = Console.ReadLine();
+            
+            while(!File.Exists(pathF))
+            {
+                Console.Clear();
+                Console.WriteLine("Ошибка в имени файла или фаил не существует.");
+                Console.Write("Введите повторно путь к файлу или abort для прекращения операции:> ");
+                pathF = Console.ReadLine();
+                if(pathF.Equals("abort"))
+                {
+                    ms.Position = 0;
+                    writer.Write(-1);//передаем имя
+                    client.Socket.Send(ms.GetBuffer());//отсылаем
+                    return;
+                }
+            }
+
             ms.Position = 0;
-            Console.WriteLine(pathF);
             try
             {
                 using (FileStream fs = new FileStream(pathF, FileMode.Open))
                 {
                     byte[] data = new byte[fs.Length];//массив для файла
                     int lenghtfile = (int)fs.Length;//размер файла
-                    fs.Read(data, 0, (int)fs.Length);//считываем фаил в массив
-
-                    int seekF = 0;//ползунок
-                    int size = 2000000;//размер кусков файла                        
+                    fs.Read(data, 0, (int)fs.Length);//считываем фаил в массив                                                    
                     string nameF = pathF.Substring(pathF.LastIndexOf('\\') + 1);//имя файла
-
                     writer.Write(lenghtfile);//передаем размер файла
                     writer.Write(nameF);//передаем имя
                     client.Socket.Send(ms.GetBuffer());//отсылаем 
                     client.Socket.Receive(ms.GetBuffer());//получаем ответ о готовности
-
                     ms.Position = 0;
                     string answer = reader.ReadString();
                     Console.WriteLine(answer);//выводим ответ
 
-                    byte[] pocketData = new byte[size];//массив бай для файла 2мб
+                    
                     using (MemoryStream msF = new MemoryStream(new byte[lenghtfile], 0, lenghtfile, true, true))
                     {
                         BinaryWriter writerF = new BinaryWriter(msF);
@@ -207,45 +257,11 @@ namespace HServer
                         msF.Position = 0;                        
                         writerF.Write(data);
                         client.Socket.Send(msF.GetBuffer());
-                        client.Socket.Receive(ms.GetBuffer());
-                        Console.WriteLine(reader.ReadString());
-                    }
-                    #region old
-                   /* using (MemoryStream msF = new MemoryStream(new byte[2000000], 0, 2000000, true, true))
-                    {
-                        
-                        BinaryWriter writerF = new BinaryWriter(msF);//
-                        bool end = false;
-
-                        while (!end)//пока размер не равен
-                        {
-                            if(data.Length - (seekF + size) <= 0)
-                            {
-                                size = (seekF - data.Length)*(-1);
-                                end = true;
-                            }
-                            
-                            Array.Copy(data, seekF, pocketData, 0, size);
-
-                            msF.Position = 0;
-                            writerF.Write(pocketData);
-                            client.Socket.Send(msF.GetBuffer());
-                            ms.Position = 0;
-                            client.Socket.Receive(ms.GetBuffer());
-                            Console.WriteLine("Загружено " + reader.ReadInt32() + "%");
-                            ms.Position = 0;
-                            writer.Write(end);
-                            client.Socket.Send(ms.GetBuffer());
-                            seekF += size;
-
-                        }
                         ms.Position = 0;
                         client.Socket.Receive(ms.GetBuffer());
                         Console.WriteLine(reader.ReadString());
-                        
-
-                    }*/
-                    #endregion
+                    }
+                   
                 }
             }
             catch (Exception ex)
@@ -262,7 +278,7 @@ namespace HServer
 
             try
             {
-                using (FileStream fs = new FileStream(@"C:\Users\Иван\Documents\visual studio 2015\Projects\hclientlib\hclientlib\bin\Debug\hclientlib.dll", FileMode.Open))
+                using (FileStream fs = new FileStream(@"C:\Users\Иван\Documents\visual studio 2015\Projects\HClient\HClient\bin\Release\HClient.exe", FileMode.Open))
                 {
                     byte[] data = new byte[fs.Length];
                     fs.Read(data, 0, data.Length);
