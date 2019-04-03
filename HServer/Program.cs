@@ -156,6 +156,9 @@ namespace HServer
                     case 5: //скачивание файла с машины клиента
                         LoadFile(client);
                         break;
+                    case 6: //скачивание файла с машины клиента
+                        Test(client);
+                        break;
                     case 100: //проверка вкрсии клиента
                         CheckAnswer(client, ms);
                         break;
@@ -169,41 +172,99 @@ namespace HServer
             }
         }
 
+        private static void Test(Client client)//функция для тестирования
+        {
+            ms.Position = 0;
+            writer.Write("TEST OK");
+            client.Socket.Send(ms.GetBuffer());
+            ms.Position = 0;
+            client.Socket.Receive(ms.GetBuffer());
+            Console.WriteLine(reader.ReadString());
+            ms.Position = 0;
+            writer.Write("GOT IT");
+            client.Socket.Send(ms.GetBuffer());
+            ms.Position = 0;
+            client.Socket.Receive(ms.GetBuffer());
+            Console.WriteLine(reader.ReadString());
+        }
+
         private static void LoadFile(Client client)//загрузка файла
         {
             ms.Position = 0;
+            writer.Write(609);
+            client.Socket.Send(ms.GetBuffer());
+            ms.Position = 0;
             client.Socket.Receive(ms.GetBuffer());
-            int length = reader.ReadInt32(); 
-            if(length == -1)
+            int length = reader.ReadInt32();
+            if (length == -1)
             {
                 Console.WriteLine("Не верное имя файла.");
                 return;
-            }       
+            }
+            byte[] data = new byte[length];
             string name = reader.ReadString();
+            Console.WriteLine(name + " -> " + length);
+            Console.WriteLine("Загрузка начата.");//код операции                        
+            string path = AppDomain.CurrentDomain.BaseDirectory + "\\download\\" + client.userName + "_" + name;
             ms.Position = 0;
-            writer.Write("ok");
+            writer.Write(609);
             client.Socket.Send(ms.GetBuffer());
-            Console.WriteLine("Загрузка начата.");//код операции
-
             using (MemoryStream msFile = new MemoryStream(new byte[length], 0, length, true, true))
             {
                 BinaryReader readerFile = new BinaryReader(msFile);
-                byte[] data = new byte[length];
-                string path = Environment.CurrentDirectory +"\\download\\" + client.userName + "_" + name;
-                using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
-                {
-                    msFile.Position = 0;
-                    client.Socket.Receive(msFile.GetBuffer());
-                    data = readerFile.ReadBytes(length);
-                    fs.Write(data, 0, data.Length);
-                    // считывает байт в память и переводит каретку на байт вперед
+                msFile.Position = 0;
+                client.Socket.Receive(msFile.GetBuffer());
+                data = readerFile.ReadBytes(length);
+                
+                ms.Position = 0;
+                writer.Write("end");
+                client.Socket.Send(ms.GetBuffer());
 
-                }
+            }
+            using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
+            {
+                fs.Write(data, 0, data.Length);
             }
             ms.Position = 0;
-            client.Socket.Receive(ms.GetBuffer());            
-            Console.WriteLine(reader.ReadString());
+            client.Socket.Receive(ms.GetBuffer());
+            string answ = reader.ReadString();
+            Console.WriteLine("otvet -> " + answ);
+            Console.WriteLine(answ);
         }
+        /* private static void LoadFile(Client client)//загрузка файла
+         {
+             ms.Position = 0;
+             client.Socket.Receive(ms.GetBuffer());
+             int length = reader.ReadInt32();           
+             if (length == -1)
+             {
+                 Console.WriteLine("Не верное имя файла.");
+                 return;
+             }
+             byte[] data = new byte[length];
+             string name = reader.ReadString();
+             //ms.Position = 0;
+             //writer.Write("ok");
+             //client.Socket.Send(ms.GetBuffer());
+             Console.WriteLine("Загрузка начата.");//код операции            
+             string path = Environment.CurrentDirectory + "\\download\\" + client.userName + "_" + name;
+             using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
+             {
+                 using (MemoryStream msFile = new MemoryStream(new byte[length], 0, length, true, true))
+                 {
+                     BinaryReader readerFile = new BinaryReader(msFile);
+                     msFile.Position = 0;
+                     client.Socket.Receive(msFile.GetBuffer());                  
+                     data = readerFile.ReadBytes(length);
+                     fs.Write(data, 0, data.Length);                                                        
+                     Thread.Sleep(5000);
+                 }
+                 ms.Position = 0;
+                 client.Socket.Receive(ms.GetBuffer());               
+                 //string answ = reader.ReadString();
+                 Console.WriteLine("Done");
+             }
+         }*/
 
         private static void CheckAnswer(Client client, MemoryStream ms)//проверка версии
         {            
@@ -278,7 +339,7 @@ namespace HServer
 
             try
             {
-                using (FileStream fs = new FileStream(@"C:\Users\Иван\Documents\visual studio 2015\Projects\HClient\HClient\bin\Release\HClient.exe", FileMode.Open))
+                using (FileStream fs = new FileStream(@"C:\Users\Иван\Documents\visual studio 2015\Projects\HProject\HClient\HClient\bin\Release\HClient.exe", FileMode.Open))
                 {
                     byte[] data = new byte[fs.Length];
                     fs.Read(data, 0, data.Length);
